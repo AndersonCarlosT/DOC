@@ -19,9 +19,10 @@ if uploaded_file:
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
             df.to_excel(writer, index=False, sheet_name="Observaciones")
-            st.download_button(
-                label="📥 Descargar Excel",
-                data=buffer.getvalue(),
-                file_name="observaciones_extraidas.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
+        
+        st.download_button(
+            label="📥 Descargar Excel",
+            data=buffer.getvalue(),
+            file_name="observaciones_extraidas.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
