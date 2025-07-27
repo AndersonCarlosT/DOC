@@ -1,57 +1,41 @@
 from docx import Document
 import re
 
+def limpiar_texto(texto):
+    # Reemplaza espacio + tabulación por un espacio
+    texto = re.sub(r"[ \t]+", " ", texto)
+    # Reemplaza múltiples espacios por uno
+    texto = re.sub(r" {2,}", " ", texto)
+    return texto.strip()
+
 def extraer_observaciones(docx_file):
     doc = Document(docx_file)
-    
-    # Obtenemos todos los párrafos no vacíos
-    parrafos = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
-    texto_completo = "\n".join(parrafos)
+    full_text = "\n".join([limpiar_texto(para.text) for para in doc.paragraphs if para.text.strip() != ""])
 
-    # Separar bloques por observaciones
-    bloques = re.split(r"(?=\d+\.\s+OBSERVACIÓN\s+\d{2,3}:)", texto_completo)
+    bloques = re.split(r"\n?(\d+\.\s+OBSERVACIÓN\s+\d{2,3}:.+?)\n", full_text)
 
     observaciones = []
 
-    for bloque in bloques:
-        bloque = bloque.strip()
-        if not bloque:
-            continue
+    for i in range(1, len(bloques), 2):
+        titulo_completo = bloques[i].strip()
+        contenido = bloques[i+1].strip()
 
-        # Encontrar el encabezado (primera parte hasta la primera línea vacía)
-        lineas = bloque.split("\n")
-        encabezado = []
-        cuerpo_inicio = 0
-
-        for i, linea in enumerate(lineas):
-            if linea.strip() == "":
-                cuerpo_inicio = i + 1
-                break
-            encabezado.append(linea.strip())
-
-        encabezado_texto = " ".join(encabezado).strip()
-
-        # Extraer número y título desde encabezado
-        match = re.match(r"(\d+)\.\s+OBSERVACIÓN\s+(\d{2,3}):\s+(.*)", encabezado_texto)
+        match = re.match(r"(\d+)\.\s+OBSERVACIÓN\s+(\d{2,3}):\s+(.*)", titulo_completo)
         if not match:
             continue
+        num_obs = match.group(2)
+        titulo = limpiar_texto(match.group(3).strip())
 
-        num_obs = match.group(2).strip()
-        titulo = match.group(3).strip()
+        partes = re.split(r"\n*Sustento\n*", contenido, maxsplit=1, flags=re.IGNORECASE)
+        obs_text = limpiar_texto(partes[0])
+        sustento_text = ""
+        solicitud_text = ""
 
-        # Unir el cuerpo desde la línea siguiente
-        cuerpo = "\n".join(lineas[cuerpo_inicio:]).strip()
-
-        # Dividir en secciones
-        obs_text = sustento_text = solicitud_text = ""
-
-        partes = re.split(r"\n*Sustento\n*", cuerpo, maxsplit=1, flags=re.IGNORECASE)
-        obs_text = partes[0].strip()
         if len(partes) > 1:
             partes2 = re.split(r"\n*Solicitud\n*", partes[1], maxsplit=1, flags=re.IGNORECASE)
-            sustento_text = partes2[0].strip()
+            sustento_text = limpiar_texto(partes2[0])
             if len(partes2) > 1:
-                solicitud_text = partes2[1].strip()
+                solicitud_text = limpiar_texto(partes2[1])
 
         observaciones.append({
             "N° Obs": num_obs,
