@@ -3,43 +3,65 @@ import re
 
 def extraer_observaciones(docx_file):
     doc = Document(docx_file)
-    full_text = "\n".join([para.text for para in doc.paragraphs if para.text.strip() != ""])
-
-    # Separar por observaciones (usamos regex para capturar el número y título)
-    bloques = re.split(r"\n?(\d+\.\s+OBSERVACIÓN\s+\d{2,3}:.+?)\n", full_text)
-
     observaciones = []
+    i = 0
+    paragraphs = doc.paragraphs
 
-    # El primer elemento puede ser texto antes de la primera observación, lo ignoramos
-    for i in range(1, len(bloques), 2):
-        titulo_completo = bloques[i].strip()
-        contenido = bloques[i+1].strip()
+    while i < len(paragraphs):
+        para = paragraphs[i].text.strip()
 
-        # Extraer número y título
-        match = re.match(r"(\d+)\.\s+OBSERVACIÓN\s+(\d{2,3}):\s+(.*)", titulo_completo)
-        if not match:
-            continue
-        num_obs = match.group(2)
-        titulo = match.group(3).strip()
+        # Buscar el inicio de una observación
+        match = re.match(r"(\d+)\.\s+OBSERVACIÓN\s+(\d{2,3}):", para, re.IGNORECASE)
+        if match:
+            num_obs = match.group(2)
 
-        # Separar en secciones
-        partes = re.split(r"\n*Sustento\n*", contenido, maxsplit=1, flags=re.IGNORECASE)
-        obs_text = partes[0].strip()
-        sustento_text = ""
-        solicitud_text = ""
+            # Extraer todo lo que esté en negrita como título
+            titulo_parts = []
+            while i < len(paragraphs):
+                for run in paragraphs[i].runs:
+                    if run.bold:
+                        titulo_parts.append(run.text.strip())
+                # Terminar si ya no hay más negrita (evita ir más allá del título)
+                if any(run.bold for run in paragraphs[i].runs):
+                    i += 1
+                else:
+                    break
 
-        if len(partes) > 1:
-            partes2 = re.split(r"\n*Solicitud\n*", partes[1], maxsplit=1, flags=re.IGNORECASE)
-            sustento_text = partes2[0].strip()
-            if len(partes2) > 1:
-                solicitud_text = partes2[1].strip()
+            titulo = " ".join(titulo_parts).strip()
 
-        observaciones.append({
-            "N° Obs": num_obs,
-            "Título": titulo,
-            "Observación": obs_text,
-            "Sustento": sustento_text,
-            "Solicitud": solicitud_text
-        })
+            # Extraer observación, sustento, solicitud
+            obs_text = []
+            sustento_text = []
+            solicitud_text = []
+
+            seccion = "observacion"
+            while i < len(paragraphs):
+                text = paragraphs[i].text.strip()
+
+                if re.match(r"^Sustento$", text, re.IGNORECASE):
+                    seccion = "sustento"
+                elif re.match(r"^Solicitud$", text, re.IGNORECASE):
+                    seccion = "solicitud"
+                elif re.match(r"^\d+\.\s+OBSERVACIÓN\s+\d{2,3}:", text, re.IGNORECASE):
+                    break  # próxima observación, salimos
+                else:
+                    if seccion == "observacion":
+                        obs_text.append(text)
+                    elif seccion == "sustento":
+                        sustento_text.append(text)
+                    elif seccion == "solicitud":
+                        solicitud_text.append(text)
+
+                i += 1
+
+            observaciones.append({
+                "N° Obs": num_obs,
+                "Título": titulo,
+                "Observación": " ".join(obs_text).strip(),
+                "Sustento": " ".join(sustento_text).strip(),
+                "Solicitud": " ".join(solicitud_text).strip()
+            })
+        else:
+            i += 1  # seguir buscando
 
     return observaciones
