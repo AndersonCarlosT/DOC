@@ -1,67 +1,70 @@
 from docx import Document
-import re
 
-def extraer_observaciones(docx_file):
+def limpiar_texto(texto):
+    return texto.replace("\t", " ").replace("\xa0", " ").strip()
+
+def es_negrita(parrafo):
+    return any(run.bold for run in parrafo.runs if run.text.strip())
+
+def parsear_docx(docx_file):
     doc = Document(docx_file)
     observaciones = []
-    i = 0
-    paragraphs = doc.paragraphs
+    num_obs = None
+    titulo = ""
+    seccion_actual = None
+    obs_text, sustento_text, solicitud_text = [], [], []
 
-    while i < len(paragraphs):
-        para = paragraphs[i].text.strip()
+    for parrafo in doc.paragraphs:
+        texto = limpiar_texto(parrafo.text)
 
-        # Buscar el inicio de una observación
-        match = re.match(r"(\d+)\.\s+OBSERVACIÓN\s+(\d{2,3}):", para, re.IGNORECASE)
-        if match:
-            num_obs = match.group(2)
+        if not texto:
+            continue  # saltar líneas vacías
 
-            # Extraer todo lo que esté en negrita como título
-            titulo_parts = []
-            while i < len(paragraphs):
-                for run in paragraphs[i].runs:
-                    if run.bold:
-                        titulo_parts.append(run.text.strip())
-                # Terminar si ya no hay más negrita (evita ir más allá del título)
-                if any(run.bold for run in paragraphs[i].runs):
-                    i += 1
-                else:
-                    break
+        if texto.lower().startswith("n°") or texto.lower().startswith("nº") or texto.lower().startswith("n.o"):
+            if num_obs:
+                observaciones.append({
+                    "N° Obs": num_obs,
+                    "Título": limpiar_texto(titulo),
+                    "Observación": limpiar_texto("\n\n".join(obs_text)),
+                    "Sustento": limpiar_texto("\n\n".join(sustento_text)),
+                    "Solicitud": limpiar_texto("\n\n".join(solicitud_text))
+                })
+                titulo, obs_text, sustento_text, solicitud_text = "", [], [], []
 
-            titulo = " ".join(titulo_parts).strip()
+            num_obs = texto.split()[-1]  # último token como número
+            seccion_actual = "titulo"
+            continue
 
-            # Extraer observación, sustento, solicitud
-            obs_text = []
-            sustento_text = []
-            solicitud_text = []
+        if es_negrita(parrafo) and not titulo:
+            titulo += " " + texto
+            continue
 
-            seccion = "observacion"
-            while i < len(paragraphs):
-                text = paragraphs[i].text.strip()
+        if texto.lower().startswith("observación"):
+            seccion_actual = "observacion"
+            continue
+        elif texto.lower().startswith("sustento"):
+            seccion_actual = "sustento"
+            continue
+        elif texto.lower().startswith("solicitud"):
+            seccion_actual = "solicitud"
+            continue
 
-                if re.match(r"^Sustento$", text, re.IGNORECASE):
-                    seccion = "sustento"
-                elif re.match(r"^Solicitud$", text, re.IGNORECASE):
-                    seccion = "solicitud"
-                elif re.match(r"^\d+\.\s+OBSERVACIÓN\s+\d{2,3}:", text, re.IGNORECASE):
-                    break  # próxima observación, salimos
-                else:
-                    if seccion == "observacion":
-                        obs_text.append(text)
-                    elif seccion == "sustento":
-                        sustento_text.append(text)
-                    elif seccion == "solicitud":
-                        solicitud_text.append(text)
+        if seccion_actual == "observacion":
+            obs_text.append(texto)
+        elif seccion_actual == "sustento":
+            sustento_text.append(texto)
+        elif seccion_actual == "solicitud":
+            solicitud_text.append(texto)
+        elif seccion_actual == "titulo":
+            titulo += " " + texto
 
-                i += 1
-
-            observaciones.append({
-                "N° Obs": num_obs,
-                "Título": titulo,
-                "Observación": " ".join(obs_text).strip(),
-                "Sustento": " ".join(sustento_text).strip(),
-                "Solicitud": " ".join(solicitud_text).strip()
-            })
-        else:
-            i += 1  # seguir buscando
+    if num_obs:
+        observaciones.append({
+            "N° Obs": num_obs,
+            "Título": limpiar_texto(titulo),
+            "Observación": limpiar_texto("\n\n".join(obs_text)),
+            "Sustento": limpiar_texto("\n\n".join(sustento_text)),
+            "Solicitud": limpiar_texto("\n\n".join(solicitud_text))
+        })
 
     return observaciones
