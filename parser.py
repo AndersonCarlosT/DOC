@@ -2,53 +2,71 @@ from docx import Document
 import re
 
 def limpiar_texto(texto):
-    # Reemplaza tabulaciones con espacios y limpia múltiples espacios
+    # Elimina tabulaciones y múltiples espacios
     texto = texto.replace('\t', ' ')
     texto = re.sub(r'[ ]{2,}', ' ', texto)
-    texto = re.sub(r'\n+', '\n', texto)  # Elimina saltos de línea repetidos
-    return texto.strip()
+    texto = re.sub(r'\n+', '\n', texto)
+    
+    # Unir líneas “colgadas” que probablemente están partidas
+    lineas = texto.split('\n')
+    nuevas_lineas = []
+    buffer = ""
+    for i, linea in enumerate(lineas):
+        stripped = linea.strip()
+        if len(stripped) < 60 and not stripped.endswith('.') and not stripped.endswith(':'):
+            # Si la línea parece colgada y no está vacía, unirla con la anterior
+            if nuevas_lineas:
+                nuevas_lineas[-1] += ' ' + stripped
+            else:
+                buffer = stripped
+        else:
+            nuevas_lineas.append(stripped)
+    return "\n".join(nuevas_lineas).strip()
 
 def extraer_observaciones(docx_file):
     doc = Document(docx_file)
 
-    # Etapa 1: Construimos una lista de observaciones con sus bloques de texto
     observaciones = []
-    obs_actual = {}
-    recogiendo = False
-    buffer_texto = ""
+    current_obs = None
+    buffer = ""
 
     for para in doc.paragraphs:
         text = para.text.strip()
 
-        # Buscar si hay título en negrita que comienza con "1. OBSERVACIÓN XX:"
-        for run in para.runs:
-            if run.bold and "OBSERVACIÓN" in run.text:
-                if obs_actual:
-                    obs_actual["Texto"] = buffer_texto.strip()
-                    observaciones.append(obs_actual)
+        # Detectar título en negrita que contiene "OBSERVACIÓN"
+        if any(run.bold and "OBSERVACIÓN" in run.text for run in para.runs):
+            if current_obs:  # guardar la observación anterior
+                current_obs["Texto"] = buffer.strip()
+                observaciones.append(current_obs)
 
-                titulo_completo = para.text.strip()
-                match = re.match(r"(\d+)\.\s+OBSERVACIÓN\s+(\d{2,3}):\s*(.*)", titulo_completo)
-                if match:
-                    obs_actual = {
-                        "N° Obs": match.group(2),
-                        "Título": match.group(3)
-                    }
-                else:
-                    obs_actual = {"N° Obs": "", "Título": titulo_completo}
-                buffer_texto = ""
-                recogiendo = True
-                break
+            # Capturar número y título completo (puede estar dividido en varias líneas)
+            numero = ""
+            titulo = ""
 
-        if recogiendo and not any(run.bold and "OBSERVACIÓN" in run.text for run in para.runs):
-            buffer_texto += "\n" + para.text
+            # Unir los runs en negrita para formar el título
+            full_title = "".join([run.text for run in para.runs if run.bold])
+            match = re.match(r"(\d+)\.\s+OBSERVACIÓN\s+(\d{2,3}):\s*(.*)", full_title)
+            if match:
+                numero = match.group(2)
+                titulo = match.group(3)
+            else:
+                numero = ""
+                titulo = full_title
 
-    # Guardar la última observación
-    if obs_actual:
-        obs_actual["Texto"] = buffer_texto.strip()
-        observaciones.append(obs_actual)
+            current_obs = {
+                "N° Obs": numero,
+                "Título": titulo
+            }
+            buffer = ""
+        else:
+            buffer += "\n" + text
 
-    # Etapa 2: Separar el bloque de texto en secciones
+    # Guardar última observación
+    if current_obs:
+        current_obs["Texto"] = buffer.strip()
+        observaciones.append(current_obs)
+
+    # Separar texto en secciones
     resultado = []
     for obs in observaciones:
         texto = limpiar_texto(obs["Texto"])
